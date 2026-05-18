@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FotoSłówka AI - MultiKombajn</title>
+    <script src="https://cdn.jsdelivr.net/npm/ocrad.js@0.1.1/ocrad.min.js"></script>
+	<link rel="manifest" href="manifest.json">
+	<script>
+	    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW err', err));
+   		 }
+	</script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        h1 { color: #2c3e50; margin-top: 0; font-size: 24px; }
+        p { color: #7f8c8d; font-size: 14px; line-height: 1.5; }
+        
+        /* Zarządzanie Ekranami */
+        #language-screen, #upload-screen, #preview-screen, #quiz-screen, #result-screen { display: none; }
+        #language-screen { display: block; }
+
+        /* Kafelek Języka */
+        .lang-selector { display: flex; gap: 10px; margin: 20px 0; flex-direction: column; }
+        .lang-card {
+            background: #fdfdfd; border: 2px solid #e2e8f0; border-radius: 12px;
+            padding: 15px; font-size: 18px; font-weight: bold; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 15px;
+            transition: all 0.2s;
+        }
+        .lang-card:hover { border-color: #3498db; background: #f0f7fc; transform: translateY(-2px); }
+
+        .upload-zone { border: 3px dashed #3498db; padding: 25px 15px; border-radius: 12px; background-color: #fbfcfc; cursor: pointer; margin: 15px 0; }
+        #preview-img { max-width: 100%; max-height: 180px; border-radius: 8px; margin: 10px auto; display: none; }
+
+        .btn {
+            color: white; border: none; padding: 14px 20px; font-size: 16px;
+            font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%;
+            margin-bottom: 10px; box-sizing: border-box;
+        }
+        .btn-blue { background-color: #3498db; }
+        .btn-blue:hover { background-color: #2980b9; }
+        .btn-green { background-color: #2ecc71; }
+        .btn-green:hover { background-color: #27ae60; }
+        .btn-orange { background-color: #e67e22; }
+        .btn-orange:hover { background-color: #d35400; }
+        .btn-secondary { background-color: #95a5a6; }
+        
+        .btn-abort {
+            background-color: transparent; color: #e74c3c; border: 1px solid #e74c3c;
+            padding: 6px 12px; font-size: 12px; border-radius: 4px; width: auto;
+            margin: 5px auto 15px auto; display: inline-block; font-weight: normal;
+        }
+        .btn-abort:hover { background-color: #fdeadc; }
+        
+        /* Lista do nauki */
+        .vocab-list { text-align: left; max-height: 280px; overflow-y: auto; margin: 15px 0; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; background: #fafafa; }
+        .vocab-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 5px; border-bottom: 1px solid #edf2f7; }
+        .vocab-item:last-child { border-bottom: none; }
+        .listen-btn { background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+
+        /* Quiz */
+        .word-to-translate { font-size: 26px; font-weight: bold; color: #2980b9; margin: 15px 0; }
+        input[type="text"] { width: 100%; padding: 12px; font-size: 18px; border: 2px solid #bdc3c7; border-radius: 6px; outline: none; box-sizing: border-box; }
+        input[type="text"]:focus { border-color: #2980b9; }
+        
+        .special-keys { margin: 10px 0; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+        .key-btn { background-color: #ebf3f9; border: 2px solid #aed6f1; color: #2980b9; font-size: 18px; font-weight: bold; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+        
+        .feedback { margin-top: 10px; font-size: 16px; font-weight: bold; min-height: 24px; }
+        .correct { color: #2ecc71; }
+        .incorrect { color: #e74c3c; }
+
+        #status-box { display: none; margin-top: 15px; padding: 12px; background-color: #fcf3cf; border-radius: 8px; border: 1px solid #f4d03f; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #f39c12; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 5px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <div id="language-screen">
+        <h1>🌍 Czego się uczymy?</h1>
+        <p>Wybierz język, z którego tabelkę chcesz teraz zeskanować:</p>
+        <div class="lang-selector">
+            <div class="lang-card" onclick="selectLanguage('de')"><span>🇩🇪</span> Niemiecki (Deutsch)</div>
+            <div class="lang-card" onclick="selectLanguage('en')"><span>🇬🇧</span> Angielski (English)</div>
+            <div class="lang-card" onclick="selectLanguage('es')"><span>🇪🇸</span> Hiszpański (Español)</div>
+        </div>
+    </div>
+    
+    <div id="upload-screen">
+        <h1 id="upload-title">📸 FotoSłówka AI</h1>
+        <p>Zrób zdjęcie tabelki. System wyciągnie dane, przeczyta je i przygotuje powtórkę!</p>
+        <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+            <div style="font-size: 40px; margin-bottom: 5px;">📷</div>
+            <div style="font-weight: bold; color: #3498db;">Zrób zdjęcie lub wybierz plik</div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+        <img id="preview-img" src="#" alt="Podgląd">
+        <div id="status-box"><div class="spinner"></div><div id="status-text">Analiza...</div></div>
+        <button id="process-btn" class="btn btn-green" style="display: none;" onclick="processImage()">Przetwórz i ucz się</button>
+        <button class="btn btn-secondary" onclick="resetToLanguageSelection()">↩ Zmień język</button>
+    </div>
+
+    <div id="preview-screen">
+        <h1>📖 Ekran Nauki</h1>
+        <p>Przejrzyj słówka i posłuchaj poprawnej wymowy przed przystąpieniem do testu.</p>
+        <div class="vocab-list" id="learning-list"></div>
+        <button class="btn btn-green" onclick="startQuiz(false)">Rozpocznij Test (10 słówek) 🚀</button>
+        <button class="btn btn-secondary" onclick="window.location.reload()">Zeskanuj coś innego 📸</button>
+    </div>
+
+    <div id="quiz-screen">
+        <h1 id="quiz-mode-title">Test AI 🌟</h1>
+        <div id="progress" style="color: #7f8c8d; font-size: 13px;">Pytanie 1</div>
+        <button class="btn btn-abort" onclick="abortQuiz()">Przerwij test i wróć do menu ↩</button>
+        
+        <div class="word-to-translate" id="polish-word">---</div>
+        <input type="text" id="german-input" placeholder="Wpisz tłumaczenie..." autocomplete="off">
+        <div class="special-keys" id="special-keys-container"></div>
+        <button class="btn btn-green" id="action-btn" onclick="checkAnswer()">Sprawdź</button>
+        <div class="feedback" id="feedback"></div>
+    </div>
+
+    <div id="result-screen">
+        <h1>Wyniki Testu</h1>
+        <div class="word-to-translate" id="final-score">0 / 0</div>
+        <p id="result-comment" style="color:#555; font-weight: bold;"></p>
+        
+        <button class="btn btn-orange" id="review-errors-btn" onclick="startQuiz(true)">Maglowanie samych błędów 🔄</button>
+        <button class="btn btn-blue" onclick="startQuiz(false)">Inny losowy zestaw z tej lekcji 🎲</button>
+        <button class="btn btn-secondary" onclick="showLearningScreen()">Wróć do ekranu nauki 📖</button>
+        <button class="btn btn-secondary" style="background-color: #7f8c8d;" onclick="window.location.reload()">Zmień lekcję / zdjęcie 📸</button>
+    </div>
+
+</div>
+
+<script>
+    const LANG_CONFIG = {
+        de: { label: "Niemiecki 🇩🇪", code: "de-DE", keys: ['ä', 'ö', 'ü', 'ß'] },
+        en: { label: "Angielski 🇬🇧", code: "en-US", keys: [] },
+        es: { label: "Hiszpański 🇪🇸", code: "es-ES", keys: ['á', 'é', 'í', 'ó', 'ú', 'ñ', '¿', '¡'] }
+    };
+
+    let selectedLang = 'de';
+    let generatedDictionary = [];
+    let currentQuestions = [];
+    let wrongAnswersSession = [];
+    let currentIndex = 0;
+    let score = 0;
+    let isAnswerChecked = false;
+    let isErrorReviewMode = false;
+
+    function selectLanguage(lang) {
+        selectedLang = lang;
+        document.getElementById('language-screen').style.display = 'none';
+        document.getElementById('upload-screen').style.display = 'block';
+        document.getElementById('upload-title').innerText = `📸 Skaner: ${LANG_CONFIG[lang].label}`;
+    }
+
+    function resetToLanguageSelection() {
+        document.getElementById('upload-screen').style.display = 'none';
+        document.getElementById('language-screen').style.display = 'block';
+    }
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = document.getElementById('preview-img');
+            img.src = e.target.result;
+            img.style.display = 'block';
+            document.getElementById('process-btn').style.display = 'block';
+        }
+        reader.readAsDataURL(file);
+    }
+
+    function processImage() {
+        const statusBox = document.getElementById('status-box');
+        document.getElementById('process-btn').disabled = true;
+        statusBox.style.display = 'block';
+
+        const img = new Image();
+        img.src = document.getElementById('preview-img').src;
+        img.onload = function() {
+            try {
+                const text = OCRAD(img);
+                parseTextToDictionary(text);
+                if (generatedDictionary.length < 2) useFallbackDictionary();
+                
+                statusBox.style.display = 'none';
+                showLearningScreen();
+            } catch (e) {
+                useFallbackDictionary();
+                statusBox.style.display = 'none';
+                showLearningScreen();
+            }
+        };
+    }
+
+    // UJEDNOLICONE BAZY AWARYJNE - KAŻDA MA DOKŁADNIE 10 SŁÓWEK
+    function useFallbackDictionary() {
+        if (selectedLang === 'de') {
+            generatedDictionary = [
+                { de: "das Ei, -er", pl: "jajko" }, { de: "das Fett", pl: "tłuszcz" }, { de: "die Butter", pl: "masło" },
+                { de: "das Öl", pl: "olej" }, { de: "der Fisch, -e", pl: "ryba" }, { de: "das Fleisch", pl: "mięso" },
+                { de: "der Apfel, -“", pl: "jabłko" }, { de: "die Banane, -n", pl: "banan" }, { de: "das Brot, -e", pl: "chleb" },
+                { de: "die Milch", pl: "mleko" }
+            ];
+        } else if (selectedLang === 'en') {
+            generatedDictionary = [
+                { de: "apple", pl: "jabłko" }, { de: "bread", pl: "chleb" }, { de: "butter", pl: "masło" },
+                { de: "to eat", pl: "jeść" }, { de: "water", pl: "woda" }, { de: "milk", pl: "mleko" },
+                { de: "fish", pl: "ryba" }, { de: "meat", pl: "mięso" }, { de: "egg", pl: "jajko" },
+                { de: "cheese", pl: "ser" }
+            ];
+        } else if (selectedLang === 'es') {
+            generatedDictionary = [
+                { de: "la manzana", pl: "jabłko" }, { de: "el pan", pl: "chleb" }, { de: "la leche", pl: "mleko" },
+                { de: "el queso", pl: "ser" }, { de: "el agua", pl: "woda" }, { de: "comer", pl: "jeść" },
+                { de: "el pescado", pl: "ryba" }, { de: "la carne", pl: "mięso" }, { de: "el huevo", pl: "jajko" },
+                { de: "la mantequilla", pl: "masło" }
+            ];
+        }
+    }
+
+    function parseTextToDictionary(text) {
+        generatedDictionary = [];
+        if(!text) return;
+        const lines = text.split('\n');
+
+        lines.forEach(line => {
+            line = line.trim();
+            if (line.length < 4) return;
+
+            let foreignWord = ""; let polishWord = "";
+            const parts = line.split(/\s{2,}|[-–—]/); 
+            if(parts.length >= 2) {
+                let part1 = parts[0].trim();
+                let part2 = parts[1].trim();
+                foreignWord = /[ęćłńóśźż]/.test(part1) ? part2 : part1;
+                polishWord = /[ęćłńóśźż]/.test(part1) ? part1 : part2;
+            } else {
+                let mid = Math.floor(line.length / 2);
+                foreignWord = line.substring(0, mid).trim();
+                polishWord = line.substring(mid).trim();
+            }
+
+            let cleanForeign = foreignWord.replace(/[^a-zA-ZäöüßÄÖÜáéíóúñ¿¡\s,-]/g, '').trim();
+            let cleanPolish = polishWord.replace(/[^a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ\s,]/g, '').trim();
+
+            if (cleanForeign && cleanPolish && cleanForeign.length > 1 && cleanPolish.length > 1) {
+                generatedDictionary.push({ de: cleanForeign, pl: cleanPolish });
+            }
+        });
+    }
+
+    function speakText(text) {
+        if ('speechSynthesis' in window) {
+            let cleanSpeech = text.split(',')[0].replace(/[^a-zA-ZäöüßÄÖÜáéíóúñ\s]/g, '');
+            let utterance = new SpeechSynthesisUtterance(cleanSpeech);
+            utterance.lang = LANG_CONFIG[selectedLang].code;
+            utterance.rate = 0.85; 
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    function showLearningScreen() {
+        document.getElementById('upload-screen').style.display = 'none';
+        document.getElementById('result-screen').style.display = 'none';
+        document.getElementById('quiz-screen').style.display = 'none';
+        document.getElementById('preview-screen').style.display = 'block';
+        
+        const listContainer = document.getElementById('learning-list');
+        listContainer.innerHTML = '';
+        
+        generatedDictionary.forEach(item => {
+            listContainer.innerHTML += `
+                <div class="vocab-item">
+                    <div><strong>${item.de}</strong><br><span style="color:#7f8c8d; font-size:13px;">${item.pl}</span></div>
+                    <button class="listen-btn" onclick="speakText('${item.de}')">🔊</button>
+                </div>
+            `;
+        });
+    }
+
+    function startQuiz(errorMode = false) {
+        isErrorReviewMode = errorMode;
+        document.getElementById('preview-screen').style.display = 'none';
+        document.getElementById('result-screen').style.display = 'none';
+        document.getElementById('quiz-screen').style.display = 'block';
+        
+        if (isErrorReviewMode) {
+            document.getElementById('quiz-mode-title').innerText = "Maglowanie Błędów 🔥";
+            currentQuestions = [...wrongAnswersSession].sort(() => 0.5 - Math.random());
+        } else {
+            document.getElementById('quiz-mode-title').innerText = "Test Główny 🌟";
+            const shuffled = [...generatedDictionary].sort(() => 0.5 - Math.random());
+            currentQuestions = shuffled.slice(0, Math.min(10, shuffled.length));
+            wrongAnswersSession = [];
+        }
+
+        const keysContainer = document.getElementById('special-keys-container');
+        keysContainer.innerHTML = '';
+        LANG_CONFIG[selectedLang].keys.forEach(char => {
+            keysContainer.innerHTML += `<button class="key-btn" onclick="insertChar('${char}')">${char}</button>`;
+        });
+
+        currentIndex = 0;
+        score = 0;
+        showQuestion();
+    }
+
+    function abortQuiz() {
+        if(confirm("Czy chcesz przerwać test i wrócić do nauki słówek?")) {
+            showLearningScreen();
+        }
+    }
+
+    function showQuestion() {
+        if (currentIndex < currentQuestions.length) {
+            document.getElementById("progress").innerText = `Pytanie ${currentIndex + 1} z ${currentQuestions.length}`;
+            document.getElementById("polish-word").innerText = currentQuestions[currentIndex].pl;
+            const inputField = document.getElementById("german-input");
+            inputField.value = ""; inputField.disabled = false;
+            document.getElementById("feedback").innerText = "";
+            document.getElementById("action-btn").innerText = "Sprawdź";
+            document.getElementById("action-btn").style.backgroundColor = "#2ecc71";
+            isAnswerChecked = false;
+            inputField.focus();
+        } else {
+            showResults();
+        }
+    }
+
+    function insertChar(char) {
+        const inputField = document.getElementById("german-input");
+        if (!inputField.disabled) { inputField.value += char; inputField.focus(); }
+    }
+
+    function checkAnswer() {
+        const inputField = document.getElementById("german-input");
+        const feedbackField = document.getElementById("feedback");
+        const actionBtn = document.getElementById("action-btn");
+        
+        if (!isAnswerChecked) {
+            let userAnswer = inputField.value.trim().toLowerCase();
+            let fullCorrectAnswer = currentQuestions[currentIndex].de;
+            let baseCorrectAnswer = fullCorrectAnswer.split(',')[0].trim().toLowerCase();
+            
+            inputField.disabled = true;
+            
+            let cleanUser = userAnswer.replace(/[\s,-]/g, '');
+            let cleanBase = baseCorrectAnswer.replace(/[\s,-]/g, '');
+            let cleanFull = fullCorrectAnswer.toLowerCase().replace(/[\s,-]/g, '');
+            
+            if (cleanUser === cleanBase || cleanUser === cleanFull) {
+                feedbackField.innerHTML = `<span class="correct">Dobrze! 🎉</span>`;
+                score++;
+                speakText(fullCorrectAnswer);
+            } else {
+                feedbackField.innerHTML = `<span class="incorrect">Błąd! ❌ Poprawnie: ${fullCorrectAnswer}</span>`;
+                if (!isErrorReviewMode) {
+                    wrongAnswersSession.push(currentQuestions[currentIndex]);
+                }
+            }
+            actionBtn.innerText = "Dalej";
+            actionBtn.style.backgroundColor = "#3498db";
+            isAnswerChecked = true;
+        } else {
+            currentIndex++;
+            showQuestion();
+        }
+    }
+
+    function showResults() {
+        document.getElementById('quiz-screen').style.display = 'none';
+        document.getElementById('result-screen').style.display = 'block';
+        document.getElementById('final-score').innerText = `Wynik: ${score} / ${currentQuestions.length}`;
+        
+        const errorBtn = document.getElementById('review-errors-btn');
+        
+        if (wrongAnswersSession.length > 0 && !isErrorReviewMode) {
+            errorBtn.style.display = 'block';
+            errorBtn.innerText = `Popraw błędy (${wrongAnswersSession.length} słówek) 🔥`;
+            document.getElementById('result-comment').innerText = "Dobra próba, czas dopracować słówka z błędami!";
+        } else {
+            errorBtn.style.display = 'none';
+            document.getElementById('result-comment').innerText = score === currentQuestions.length ? "Perfekcyjnie! 🏆 Wybierz inny zestaw lub zmień język!" : "Wszystkie poprawki zaliczone! 🌟";
+        }
+    }
+
+    document.getElementById("german-input").addEventListener("keypress", function(event) {
+        if (event.key === "Enter") { checkAnswer(); }
+    });
+</script>
+
+</body>
+</html>
